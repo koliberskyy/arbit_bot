@@ -12,6 +12,7 @@ file = open("bot.key", 'r')
 token = file.readline()
 file.close()
 
+
 bot = telebot.TeleBot(token)
 message = ""
 comission = 0.001
@@ -31,12 +32,6 @@ thr2.start()
 thr1.join()
 thr2.join()
 
-
-#@bot.message_handler(commands = ['start'])
-#@bot.message_handler()
-#def url(message):
-#    markup = types.InlineKeyboardMarkup()
-#    bot.send_message(message.from_user.id, f"{data['symbol']} price is {data['price']}", reply_markup = markup)
 
 message = f"bot finished..."
 url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id2}&text={message}"
