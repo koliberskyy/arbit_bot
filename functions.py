@@ -1,3 +1,5 @@
+import time
+
 import USDT
 import BTC
 import BNB
@@ -5,7 +7,7 @@ import json
 import requests
 from threading import Thread, Lock
 from binance.spot import Spot
-
+import math
 file = open("api_key.txt", 'r')
 api_key = file.readline()
 print(api_key)
@@ -18,9 +20,23 @@ file.close()
 
 client = Spot(api_key=api_key, api_secret=api_secret)
 
+#quotePrecision = client.exchange_info('DOGEUSDT')
+#print(quotePrecision)
+#hui = quotePrecision['symbols'][0]['filters'][1]['minQty']
+#hui2 = quotePrecision['symbols'][0]['filters'][0]['minPrice']
+#print(hui)
+#print(hui2)
+
 #левая часть ссылки
 refLeft = "https://api.binance.com/api/v3/ticker/price?symbol="
-
+def fix_balance(balance, pair):
+    "вычитаем из баланса минимальную сумму сделки"
+    quotePrecision = client.exchange_info(pair)
+    quotePrecision = quotePrecision['symbols'][1][1][1]
+    print(f"quotePrecision:{quotePrecision}")
+    round(balance, quotePrecision)
+    print(f"fixed_balance:{balance}")
+    return balance
 def get_balance(pair, client):
     "функция получения цены по ссылке"
     tmp = client.account()
@@ -57,39 +73,68 @@ def realize_spred(start_token, first_token, second_token, target_token, commissi
     balance = get_balance(start_token, client)
     print(f"balance{start_token}:{balance}")
     url = refLeft + first_token + start_token
-    quantity = balance/get_price(url)
-    quantity *= 0.99
-    print(f"quantity{first_token}:{quantity}")
 
-    balance = order_market(first_token + start_token, quantity, 'BUY') * commission
+    balance = order_market(first_token + start_token, balance, 'BUY')
+    balance = get_balance(first_token, client)
     print(f"balance{first_token}:{balance}")
     url = refLeft + second_token + first_token
-    quantity = balance/get_price(url)
-    quantity *= 0.99
-    print(f"quantity{second_token}:{quantity}")
 
-    balance = order_market(second_token + first_token, quantity, 'BUY') * commission #73.42
+    balance = order_market(second_token + first_token, balance, 'BUY')
+    balance = get_balance(second_token, client)
     print(f"balance{second_token}:{balance}")
-    url = refLeft + second_token + target_token #0.364
-    quantity = get_price(url) * balance
-    quantity *= 0.99
-    print(f"quantity{target_token}:{quantity}")
+    url = refLeft + second_token + target_token
 
-    balance = order_market(second_token + target_token, quantity, 'SELL') * commission
-    print(f"balance{target_token}:{balance}")
+    balance = order_market(second_token + target_token, balance, 'SELL')
 
+    print(f"donerkebabalance:{get_balance(target_token, client)} \n \n \n")
     return balance
-def order_market(pair, quantity, buy_sell):
+def order_market(pair, quoteOrderQty, buy_sell):
     "открытие ордера"
-    quantity = round(quantity, 5)
-    params = {
-        'symbol': pair,
-        'side': buy_sell,
-        'type': 'MARKET',
-        'quantity': quantity,
-    }
+    #quantity = round(quantity, 5)
+    #quantity = float("{0:.00001f}".format(quantity))
+   # btcusdt
+   # bal = usdt
+   # adabtc
+   # bal=btc
+   # adausdt
+   # bal = ada
+    #сомневаюсь что на бай нужна такая процедура
+    if buy_sell == 'SELL':
+        rounded = 0
+        minQty = client.exchange_info(pair)
+        minQty = minQty['symbols'][0]['filters'][1]['minQty']
+        count = 0
+        qty = float(minQty)
+        if float(minQty) > 0.1:
+            rounded = round(quoteOrderQty, 0)
+        else:
+            while qty < 1:
+                qty *= 10
+                count += 1
+            rounded = round(quoteOrderQty, count)
+
+        if (rounded > quoteOrderQty):
+            rounded -= float(minQty)
+            rounded = round(rounded, 8)
+
+        quoteOrderQty = rounded
+        params = {
+            'symbol': pair,
+            'side': buy_sell,
+            'type': 'MARKET',
+            'quantity': quoteOrderQty
+        }
+        print(f"quoteOrderQty (order_market):{params['quantity']}")
+    else:
+        params = {
+            'symbol': pair,
+            'side': buy_sell,
+            'type': 'MARKET',
+            'quoteOrderQty': quoteOrderQty
+        }
+        print(f"quoteOrderQty (order_market):{params['quoteOrderQty']}")
     response = client.new_order(**params)
-    return float(response['executedOty'])
+    return float(response['executedQty'])
 def doWork(pair, comission, token, chat_id, lock:Lock):
     "основная рабочая функция"
     while 1:
@@ -103,8 +148,12 @@ def doWork(pair, comission, token, chat_id, lock:Lock):
                 print(requests.get(url).json())  # Эта строка отсылает сообщение
                 print(str(spred))
                 realize_spred("USDT", pair[0], pair[counter + 1], "USDT", comission)
-                print("donerkebab \n \n \n")
                 lock.release()
+
+                message = f"balance USDT:{get_balance('USDT', client)}"
+                url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
+                print(requests.get(url).json())  # Эта строка отсылает сообщение
+
         print(f"{pair[0]}_DONE!!!!!!!!!!!!!!!!!!!!")
     return 0
 #    def Имя(аргументы):
