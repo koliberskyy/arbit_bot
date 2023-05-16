@@ -7,6 +7,7 @@ pair = ["BTC",
         "CAKE",
         "COMP",
         "DOGE",
+        "DOT",
         "ETH",
         "FTM",
         "GALA",
@@ -20,5 +21,6 @@ pair = ["BTC",
         "SOL",
         "SUSHI",
         "TKO",
-        "XRP"
+        "XRP",
+        "ALGO"
         ]
