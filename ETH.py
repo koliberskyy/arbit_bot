@@ -13,4 +13,10 @@ pair = ["ETH",
         "SOL",
         "XRP",
         "ALGO"
+        "APT",
+        "AXS",
+        "FIL",
+        "GMT",
+        "GRT",
+        "KAVA"
         ]

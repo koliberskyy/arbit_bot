@@ -19,7 +19,7 @@ message = ""
 comission = 0.001
 chat_id = -1001798375923
 
-message = f"bot starts..."
+message = f"Мы открываем бизнес, мы будем делать бабки.{functions.get_balance('USDT',functions.client)}"
 url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
 print(requests.get(url).json())  # Эта строка отсылает сообщение
 

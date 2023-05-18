@@ -11,7 +11,7 @@ pair = ["BTC",
         "ETH",
         "FTM",
         "GALA",
-        "ICP",
+        #"ICP", connection err
         "ICX",
         "IDEX",
         "KSM",
@@ -22,5 +22,11 @@ pair = ["BTC",
         "SUSHI",
         "TKO",
         "XRP",
-        "ALGO"
+        "ALGO",
+        "APT",
+        "AXS",
+        "FIL",
+        "GMT",
+        "GRT",
+        "KAVA"
         ]

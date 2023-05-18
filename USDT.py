@@ -29,6 +29,5 @@ pair = ["USDT",
         "FIL",
         "GMT",
         "GRT",
-        "KAVA",
-
+        "KAVA"
         ]

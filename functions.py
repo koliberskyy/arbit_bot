@@ -3,6 +3,8 @@ import requests
 from threading import Thread, Lock
 from binance.spot import Spot
 
+import main
+
 file = open("api_key.txt", 'r')
 api_key = file.readline()
 print(api_key)
@@ -14,6 +16,7 @@ print(api_secret)
 file.close()
 
 client = Spot(api_key=api_key, api_secret=api_secret)
+
 
 #левая часть ссылки
 refLeft = "https://api.binance.com/api/v3/ticker/price?symbol="
@@ -31,7 +34,6 @@ def get_balance(pair, client):
     t_start = time.time()
 
     #client.user_asset()
-
     tmp = client.account()
     for counter in range((len(tmp['balances']))):
         if tmp['balances'][counter]['asset'] == pair:
@@ -44,58 +46,71 @@ def get_balance(pair, client):
 
 def get_price(url):
     "функция получения цены по ссылке"
+    #print(f"try to connect:{url}")
     price = requests.get(url)
-    price = price.json()
-    return float(price['price'])
+    #print(f"connection sucsess")
+    try:
+        price = price.json()
+        price = float(price['price'])
+    except KeyError:
+        price = 1000000.0
+    except requests.exceptions.JSONDecodeError:
+        price = 1000000.0
+
+    return price
 
 # функция расчета спреда для торговой пары с учетом комиссии
 def get_spred(start_token, first_token, second_token, target_token, commission):
     "функция расчета спреда для торговой пары"
+    try:
+        t_start = time.time()
 
-    t_start = time.time()
+        spred = 1
+        url1 = refLeft + first_token + start_token
+        url2 = refLeft + second_token + first_token
+        url3 = refLeft + second_token + target_token
 
-    spred = 1
-    url1 = refLeft + first_token + start_token
-    url2 = refLeft + second_token + first_token
-    url3 = refLeft + second_token + target_token
+        price1 = get_price(url1)
+        price2 = get_price(url2)
+        price3 = get_price(url3)
 
-    price1 = get_price(url1)
-    price2 = get_price(url2)
-    price3 = get_price(url3)
-
-    spred /= price1
-    spred /= price2
-    spred *= price3
-
+        spred /= price1
+        spred /= price2
+        spred *= price3
+    except TimeoutError:
+        print(f"timeoutError")
+        return 0
     print(f"{start_token}-{first_token}-{second_token}-{target_token}:\t\t{spred}\t\t price chain:{price1, price2, price3}")
 
     t_end = time.time()
     print("The time of execution of get_spred is :", (t_end - t_start) * 10 ** 3, "ms")
 
     return spred
-def realize_spred(start_token, first_token, second_token, target_token, commission):
+def realize_spred(start_token, first_token, second_token, target_token, lock:Lock, balance):
     "функция покупки цепочки"
-
+    lock.acquire()
+    print("realise spred")
     t_start = time.time()
 
-    balance = get_balance(start_token, client)
+    balance = balance
     print(f"balance{start_token}:{balance}")
-    order_market(first_token + start_token, balance, 'BUY')
+    balance = order_market(first_token + start_token, balance, 'BUY')
 
-    balance = get_balance(first_token, client)
+    #balance = get_balance(first_token, client)
     print(f"balance{first_token}:{balance}")
-    order_market(second_token + first_token, balance, 'BUY')
+    balance = order_market(second_token + first_token, balance, 'BUY')
 
-    balance = get_balance(second_token, client)
+    #balance = get_balance(second_token, client)
     print(f"balance{second_token}:{balance}")
-    balance = order_market(second_token + target_token, balance, 'SELL')
+    order_market(second_token + target_token, balance, 'SELL')
 
     t_end = time.time()
     print("\nThe time of execution of realize_spred is :", (t_end - t_start) * 10 ** 3, "ms\n")
 
+    print(f"расчетный баланс:{balance}")
     print(f"donerkebabalance:{get_balance(target_token, client)} \n \n \n")
-
-    return balance
+    lock.release()
+    return (t_end - t_start) * 10 ** 3
 def order_market(pair, quoteOrderQty, buy_sell):
     "открытие ордера"
 
@@ -141,55 +156,52 @@ def order_market(pair, quoteOrderQty, buy_sell):
     commission = response['fills'][0]['commission']
     quoteQty = response['cummulativeQuoteQty']
     price = response['fills'][0]['price']
-    result = float(qty) - float(commission)
+
+    if buy_sell == 'SELL':
+        result = float(quoteQty) #- float(commission)
+    else:
+        result = float(quoteQty) / float(price) #- float(commission)
+        result -= float(commission) 
+
     result = round(result, 8)
+    print(f"Расчетный баланс:{result}")
     print(f"order:{pair}, qty:{qty}, price{price}, quoteQty:{quoteQty}, commission:{commission}, result(calculated):{result}")
 
     t_end = time.time()
-
     print("\nThe time of execution of order_market is :", (t_end - t_start) * 10 ** 3, "ms\n")
 
     return result
 def doWork(pair, comission, token, chat_id, lock:Lock):
     "основная рабочая функция"
-    while 1:
-        for counter in range(len(pair) - 1):
-            spred = get_spred("USDT", pair[0], pair[counter + 1], "USDT", comission)
-            if spred > 1.008: #лучше даже будет 0.004, изза скачков цены вниз, за время оторое проходит от расчета до покупки спред падае ниже комиссии
-                lock.acquire()
-                realize_spred("USDT", pair[0], pair[counter + 1], "USDT", comission)
-                lock.release()
+    try:
+        balance = get_balance('USDT', client)
+        print(f"balance usdt:{balance}")
+        while 1:
+            for counter in range(len(pair) - 1):
+                spred = get_spred("USDT", pair[0], pair[counter + 1], "USDT", comission)
+                    #лучше даже будет 0.004, изза скачков цены вниз, за время оторое проходит от расчета до покупки спред падае ниже комиссии
+                while spred > 1.005:
+                    print("realize section here")
+                    time_realize = realize_spred("USDT", pair[0], pair[counter + 1], "USDT", lock, balance)
+                    message = f"USDT-{pair[0]}-{pair[counter + 1]}-USTD:\n{str(spred)}\n" \
+                              f"balance USDT:{get_balance('USDT', client)}\n" \
+                              f"balance BTC:{get_balance('BTC', client)}\n" \
+                              f"balance BNB:{get_balance('BNB', client)}\n" \
+                              f"Время выполнения покупки:{time_realize}"
+                    url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
+                    print(requests.get(url).json())  # Эта строка отсылает сообщение
 
-                message = f"USDT-{pair[0]}-{pair[counter + 1]}-USTD:\n{str(spred)}"
-                url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
-                print(requests.get(url).json())  # Эта строка отсылает сообщение
+                    balance = get_balance('USDT', client)
+                    spred = get_spred("USDT", pair[0], pair[counter + 1], "USDT", comission)
 
-                message = f"balance USDT:{get_balance('USDT', client)}"
-                url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
-                print(requests.get(url).json())  # Эта строка отсылает сообщение
+            print(f"{pair[0]}_DONE!!!!!!!!!!!!!!!!!!!!")
 
-        print(f"{pair[0]}_DONE!!!!!!!!!!!!!!!!!!!!")
-    return 0
+    except requests.exceptions.ConnectTimeout:
+        message = f"{pair[0]}-вылетел по интернету"
+        url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
+        print(requests.get(url).json())  # Эта строка отсылает сообщение
+        
 
 #realize_spred('USDT', 'BTC', 'IDEX', 'USDT', 0.001)
 
-file_tokens = open("tokens.txt", 'r')
-file_pairs = open("pairs.txt", 'a+')
-tmp = "hui"
-while tmp != EOFError:
-    tmp = file_tokens.readline()
-    url = refLeft + tmp + 'ETH'
-
-    url = refLeft + 'DOGE' + 'SOL'
-    pair = requests.get(url)
-    pair2 = str(pair.json())
-
-    if pair2[2] == 'c':
-        break
-    pair = pair.json()
-    print(pair['symbol'])
-    file_pairs.write(pair['symbol'])
-
-file_tokens.close()
-file_pairs.close()
 
