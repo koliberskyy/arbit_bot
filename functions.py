@@ -2,7 +2,7 @@ import time
 import requests
 from threading import Thread, Lock
 from binance.spot import Spot
-
+import threading
 import main
 
 file = open("api_key.txt", 'r')
@@ -20,35 +20,19 @@ client = Spot(api_key=api_key, api_secret=api_secret)
 
 #левая часть ссылки
 refLeft = "https://api.binance.com/api/v3/ticker/price?symbol="
-def fix_balance(balance, pair):
-    "вычитаем из баланса минимальную сумму сделки"
-    quotePrecision = client.exchange_info(pair)
-    quotePrecision = quotePrecision['symbols'][1][1][1]
-    print(f"quotePrecision:{quotePrecision}")
-    round(balance, quotePrecision)
-    print(f"fixed_balance:{balance}")
-    return balance
 def get_balance(pair, client):
     "функция получения цены по ссылке"
 
-    t_start = time.time()
-
-    #client.user_asset()
     tmp = client.account()
     for counter in range((len(tmp['balances']))):
         if tmp['balances'][counter]['asset'] == pair:
             return float(tmp['balances'][counter]['free'])
 
-    t_end = time.time()
-    print("The time of execution of get_balance is :", (t_end - t_start) * 10 ** 3, "ms")
-
     return 0
 
 def get_price(url):
     "функция получения цены по ссылке"
-    #print(f"try to connect:{url}")
     price = requests.get(url)
-    #print(f"connection sucsess")
     try:
         price = price.json()
         price = float(price['price'])
@@ -74,6 +58,9 @@ def get_spred(start_token, first_token, second_token, target_token, commission):
         price2 = get_price(url2)
         price3 = get_price(url3)
 
+        t_end = time.time()
+
+
         spred /= price1
         spred /= price2
         spred *= price3
@@ -82,10 +69,10 @@ def get_spred(start_token, first_token, second_token, target_token, commission):
         return 0
     print(f"{start_token}-{first_token}-{second_token}-{target_token}:\t\t{spred}\t\t price chain:{price1, price2, price3}")
 
-    t_end = time.time()
     print("The time of execution of get_spred is :", (t_end - t_start) * 10 ** 3, "ms")
 
     return spred
+
 def realize_spred(start_token, first_token, second_token, target_token, lock:Lock, balance):
     "функция покупки цепочки"
     lock.acquire()
@@ -141,7 +128,10 @@ def order_market(pair, quoteOrderQty, buy_sell):
             'type': 'MARKET',
             'quantity': quoteOrderQty
         }
-        print(f"quoteOrderQty (order_market):{params['quantity']}")
+        print(f"qty (order_market):{params['quantity']}")
+
+        t_end_sell = time.time()
+        print("\nThe time of SELL SECTION :", (t_end_sell - t_start) * 10 ** 3, "ms\n")
     else:
         params = {
             'symbol': pair,
@@ -161,7 +151,6 @@ def order_market(pair, quoteOrderQty, buy_sell):
         result = float(quoteQty) #- float(commission)
     else:
         result = float(quoteQty) / float(price) #- float(commission)
-        result -= float(commission) 
 
     result = round(result, 8)
     print(f"Расчетный баланс:{result}")
@@ -171,6 +160,9 @@ def order_market(pair, quoteOrderQty, buy_sell):
     print("\nThe time of execution of order_market is :", (t_end - t_start) * 10 ** 3, "ms\n")
 
     return result
+
+
+
 def doWork(pair, comission, token, chat_id, lock:Lock):
     "основная рабочая функция"
     try:
