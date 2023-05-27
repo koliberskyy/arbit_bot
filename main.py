@@ -1,6 +1,6 @@
-# version 2.0a
+# version 3.0b
 # author:koliberskyy(github)
-# date: 19.05.23
+# date: 22.05.23
 
 # x.0 - значительные изменения в порядке работы программы
 # 1.x - незначитеьные изменения в поряке работы программы связанные с исправлением ошбок,
@@ -13,40 +13,65 @@
 import requests
 import threading
 from threading import Lock
-import BTC
-import BNB
-import ETH
-import functions
-import telebot
-import limit
+import coins
+from tg_bot import TgBot
 
-# bot initialization
-file = open("bot.key", 'r')
-token = file.readline()
-file.close()
+import spred
+from orders import Orders
 
-bot = telebot.TeleBot(token)
-comission = 0.001
-chat_id = -1001798375923
+orders_obj = Orders()
+tg_bot = TgBot()
 
-message = f"Мы открываем бизнес, мы будем делать бабки.{functions.get_balance('USDT', functions.client)}"
-url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
-print(requests.get(url).json())  # Эта строка отсылает сообщение
 
-type_of_order = 'LIMIT'
+def do_bbs(coins, lock:Lock):
+    try:
+        while 1:
+            for it in range(len(coins) - 1):
+                if lock.locked() != True:
+                    spred_result = spred.get_spred_bbs(coins[0], coins[it + 1])
+                    while spred_result['spred'] > 1.005:
+                        bbs_result = orders_obj.buy_buy_sell(spred_result, lock)
+                        tg_bot.send_message(bbs_result)
+                        spred_result = spred.get_spred_bbs(coins[0], coins[it + 1])
+    except requests.exceptions.ConnectTimeout:
+        do_bbs(coins, lock)
+
+
+def do_bss(coins, lock:Lock):
+    try:
+        while 1:
+            for it in range(len(coins) - 1):
+                if lock.locked() != True:
+                    spred_result = spred.get_spred_bss(coins[it + 1], coins[0])
+                    while spred_result['spred'] > 1.005:
+                        bss_result = orders_obj.buy_sell_sell(spred_result, lock)
+                        tg_bot.send_message(bss_result)
+                        spred_result = spred.get_spred_bbs(coins[it + 1], coins[0])
+    except requests.exceptions.ConnectTimeout:
+        do_bbs(coins, lock)
+
+
 lock = Lock()
-if type_of_order == 'MARKET':
-    thr1 = threading.Thread(target=functions.doWork, args=(BTC.pair, comission, token, chat_id, lock), daemon=True)
-    thr2 = threading.Thread(target=functions.doWork, args=(BNB.pair, comission, token, chat_id, lock), daemon=True)
+
+#BBS red
+#BSS green
+
+trigger = 'BBS'
+
+if trigger == 'BBS':
+    thr1 = threading.Thread(target=do_bbs, args=(coins.BTC, lock), daemon=True)
+    thr2 = threading.Thread(target=do_bbs, args=(coins.BNB, lock), daemon=True)
+    thr3 = threading.Thread(target=do_bbs, args=(coins.ETH, lock), daemon=True)
     thr1.start()
     thr2.start()
+    thr3.start()
     thr1.join()
     thr2.join()
-
-elif type_of_order == 'LIMIT':
-    thr1 = threading.Thread(target=limit.do_work, args=(BTC.pair, token, chat_id, lock), daemon=True)
-    thr2 = threading.Thread(target=limit.do_work, args=(BNB.pair, token, chat_id, lock), daemon=True)
-    thr3 = threading.Thread(target=limit.do_work, args=(ETH.pair, token, chat_id, lock), daemon=True)
+    thr3.join()
+else:
+    thr1 = threading.Thread(target=do_bss, args=(coins.BTC, lock), daemon=True)
+    thr2 = threading.Thread(target=do_bss, args=(coins.BNB, lock), daemon=True)
+    thr3 = threading.Thread(target=do_bss, args=(coins.ETH, lock), daemon=True)
     thr1.start()
     thr2.start()
     thr3.start()
@@ -54,8 +79,4 @@ elif type_of_order == 'LIMIT':
     thr2.join()
     thr3.join()
 
-message = f"bot finished..."
-url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
-print(requests.get(url).json())  # Эта строка отсылает сообщение
 
-bot.polling(none_stop=True, interval=0)  # обязательная для работы бота часть
